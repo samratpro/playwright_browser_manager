@@ -1,5 +1,5 @@
 # from playwright_chrome_manager.chrome_manager import BrowserManager
-from playwright_browser_manager.browser_manager import BrowserManager
+from browser_manager import BrowserManager
 import time
 
 debug_port=9221 # 9222, 9223

@@ -1,5 +1,7 @@
 import os
 import subprocess
+import shutil
+import tempfile
 import time
 import platform
 import socket
@@ -27,6 +29,7 @@ class BrowserManager:
         self.browser = None
         self.page = None
         self.process_pid = None
+        self._temp_profile_path = None
 
     def _find_browser_path(self):
         """
@@ -301,6 +304,115 @@ class BrowserManager:
             await self.close_browser_async()
             raise
 
+    def connect_to_browser_without_profile(self, url=None, headless=False, timeout=60000):
+        """
+        Launch the browser with a fresh temporary profile.
+        - A new temp dir is created automatically (guaranteed clean start every run).
+        - The temp path is printed to the terminal.
+        - The temp dir is deleted automatically when close_browser() is called.
+        This is the most stable way to get a fully isolated CDP-connected browser
+        without using a saved profile.
+        """
+        if not self._is_port_open(self.debug_port):
+            raise RuntimeError(f"Port {self.debug_port} is in use. Choose another port.")
+
+        # Create a fresh temp directory for this session
+        self._temp_profile_path = tempfile.mkdtemp(prefix="bm_temp_profile_")
+        print(f"📁 Temp profile path : {self._temp_profile_path}")
+
+        args = [
+            self.browser_path,
+            f"--remote-debugging-port={self.debug_port}",
+            f"--user-data-dir={self._temp_profile_path}",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ]
+        if headless:
+            args.append("--headless=new")
+
+        print(f"🚀 Launching browser with temp profile...")
+        self.browser_process = subprocess.Popen(
+            args, shell=False,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        self.process_pid = self.browser_process.pid
+        time.sleep(3)  # Wait for browser to start
+        print(f"✅ Browser started (PID: {self.process_pid}).")
+
+        try:
+            self.playwright_instance = sync_playwright().start()
+            self.browser = self.playwright_instance.chromium.connect_over_cdp(
+                f"http://127.0.0.1:{self.debug_port}"
+            )
+            contexts = self.browser.contexts
+            self.page = (
+                contexts[0].pages[0]
+                if contexts and contexts[0].pages
+                else self.browser.new_page()
+            )
+            if url:
+                self.page.goto(url, timeout=timeout)
+                self.page.wait_for_load_state("load", timeout=timeout)
+            return self.page
+        except Exception as e:
+            print(f"Failed to connect to browser: {e}")
+            self.close_browser()
+            raise
+
+    async def connect_to_browser_without_profile_async(self, url=None, headless=False, timeout=60000):
+        """
+        Async version of connect_to_browser_without_profile.
+        Launch the browser with a fresh temporary profile.
+        - A new temp dir is created automatically (guaranteed clean start every run).
+        - The temp path is printed to the terminal.
+        - The temp dir is deleted automatically when close_browser_async() is called.
+        """
+        if not self._is_port_open(self.debug_port):
+            raise RuntimeError(f"Port {self.debug_port} is in use. Choose another port.")
+
+        # Create a fresh temp directory for this session
+        self._temp_profile_path = tempfile.mkdtemp(prefix="bm_temp_profile_")
+        print(f"📁 Temp profile path : {self._temp_profile_path}")
+
+        args = [
+            self.browser_path,
+            f"--remote-debugging-port={self.debug_port}",
+            f"--user-data-dir={self._temp_profile_path}",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ]
+        if headless:
+            args.append("--headless=new")
+
+        print(f"🚀 [Async] Launching browser with temp profile...")
+        self.browser_process = subprocess.Popen(
+            args, shell=False,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        self.process_pid = self.browser_process.pid
+        time.sleep(2)  # Wait for browser to start
+        print(f"✅ [Async] Browser started (PID: {self.process_pid}).")
+
+        try:
+            self.playwright_instance = await async_playwright().start()
+            self.browser = await self.playwright_instance.chromium.connect_over_cdp(
+                f"http://127.0.0.1:{self.debug_port}"
+            )
+            contexts = self.browser.contexts
+            if contexts and contexts[0].pages:
+                self.page = contexts[0].pages[0]
+            else:
+                self.page = await self.browser.new_page()
+
+            if url:
+                await self.page.goto(url, timeout=timeout)
+                await self.page.wait_for_load_state("load", timeout=timeout)
+            return self.page
+        except Exception as e:
+            print(f"[Async] Failed to connect to browser: {e}")
+            await self.close_browser_async()
+            raise
+
     def _launch_browser_clean(self, profile_name, headless=False):
         user_data_dir = os.path.join(self.base_profile_dir, profile_name)
         args = [
@@ -459,6 +571,14 @@ class BrowserManager:
                     pass
             self.browser_process = None
             self.process_pid = None
+        # Clean up temp profile dir if one was created
+        if self._temp_profile_path and os.path.exists(self._temp_profile_path):
+            try:
+                shutil.rmtree(self._temp_profile_path, ignore_errors=True)
+                print(f"🗑️  Temp profile deleted : {self._temp_profile_path}")
+            except Exception as e:
+                print(f"Warning: could not delete temp profile: {e}")
+            self._temp_profile_path = None
         print("✅ Browser closed.")
 
     async def close_browser_async(self):
@@ -498,6 +618,14 @@ class BrowserManager:
                     pass
             self.browser_process = None
             self.process_pid = None
+        # Clean up temp profile dir if one was created
+        if self._temp_profile_path and os.path.exists(self._temp_profile_path):
+            try:
+                shutil.rmtree(self._temp_profile_path, ignore_errors=True)
+                print(f"🗑️  Temp profile deleted : {self._temp_profile_path}")
+            except Exception as e:
+                print(f"Warning: could not delete temp profile: {e}")
+            self._temp_profile_path = None
         print("✅ Browser closed.")
 
 
