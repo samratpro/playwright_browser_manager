@@ -8,7 +8,7 @@ import socket
 import psutil
 from playwright.async_api import async_playwright
 from playwright.sync_api import sync_playwright
-from proxy_config import detect_country, country_from_dataimpulse_username, FINGERPRINTS, DEFAULT_FINGERPRINT
+from playwright_browser_manager.proxy_config import detect_country, country_from_dataimpulse_username, FINGERPRINTS, DEFAULT_FINGERPRINT
 
 class BrowserManager:
     def __init__(self, base_profile_dir=None, browser_path=None, debug_port=9222):
