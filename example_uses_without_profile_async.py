@@ -10,7 +10,7 @@
 # No pre-existing profile is needed — just run and go.
 
 import asyncio
-from browser_manager import BrowserManager
+from playwright_browser_manager.browser_manager import BrowserManager
 
 
 # ============================================================================

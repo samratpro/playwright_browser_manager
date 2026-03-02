@@ -3,7 +3,7 @@ Example multi tab process to collect data fast
 """
 import csv
 import asyncio
-from browser_manager import BrowserManager
+from playwright_browser_manager.browser_manager import BrowserManager
 
 csv_path = "data.csv"
 async def scrape_single_link(semaphore, context, link):
