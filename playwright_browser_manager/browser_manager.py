@@ -220,8 +220,30 @@ class BrowserManager:
         """Start browser with the specified profile and connect via Playwright."""
         if not self.profile_exists(profile_name):
             raise ValueError(f"Profile '{profile_name}' does not exist. Create it first.")
-        if not self._is_port_open(self.debug_port):
-            raise RuntimeError(f"Port {self.debug_port} is in use. Choose another port.")
+        port_open = self._is_port_open(self.debug_port)
+        if not port_open:
+            # Try to connect to existing browser
+            try:
+                self.playwright_instance = sync_playwright().start()
+                self.browser = self.playwright_instance.chromium.connect_over_cdp(f"http://127.0.0.1:{self.debug_port}")
+                contexts = self.browser.contexts
+                self.page = contexts[0].pages[0] if contexts and contexts[0].pages else self.browser.new_page()
+                if url:
+                    self.page.goto(url, timeout=timeout)
+                    self.page.wait_for_load_state('load', timeout=timeout)
+                print(f"Reused existing browser on port {self.debug_port} for profile '{profile_name}'")
+                # Don't set browser_process and process_pid since we're not managing it
+                self.browser_process = None
+                self.process_pid = None
+                return self.page
+            except Exception as e:
+                print(f"Failed to connect to existing browser: {e}")
+                # Kill the process using the port
+                proc = self._get_process_by_port(self.debug_port)
+                if proc:
+                    self._kill_child_processes(proc.pid)
+                    time.sleep(2)  # Wait for it to close
+                # Now port should be open, proceed to start new
         user_data_dir = self.get_profile_path(profile_name)
         args = [
             self.browser_path,
@@ -628,7 +650,16 @@ class BrowserManager:
             self._temp_profile_path = None
         print("✅ Browser closed.")
 
-
+    def _get_process_by_port(self, port):
+        """Find the process using the specified port."""
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                for conn in proc.connections():
+                    if conn.laddr.port == port:
+                        return proc
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return None
 
     def __enter__(self):
         return self
@@ -636,8 +667,4 @@ class BrowserManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close_browser()
         return False
-
-
-
-
 
