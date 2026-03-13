@@ -10,6 +10,14 @@ from playwright.async_api import async_playwright
 from playwright.sync_api import sync_playwright
 from playwright_browser_manager.proxy_config import detect_country, country_from_dataimpulse_username, FINGERPRINTS, DEFAULT_FINGERPRINT
 
+_shared_playwright = None
+
+def _get_shared_playwright():
+    global _shared_playwright
+    if _shared_playwright is None:
+        _shared_playwright = sync_playwright().start()
+    return _shared_playwright
+
 class BrowserManager:
     def __init__(self, base_profile_dir=None, browser_path=None, debug_port=9222):
         """
@@ -224,7 +232,7 @@ class BrowserManager:
         if not port_open:
             # Try to connect to existing browser
             try:
-                self.playwright_instance = sync_playwright().start()
+                self.playwright_instance = _get_shared_playwright()
                 self.browser = self.playwright_instance.chromium.connect_over_cdp(f"http://127.0.0.1:{self.debug_port}")
                 contexts = self.browser.contexts
                 self.page = contexts[0].pages[0] if contexts and contexts[0].pages else self.browser.new_page()
@@ -268,7 +276,7 @@ class BrowserManager:
         time.sleep(3)  # Wait for browser to start
         print(f"✅ Browser started for profile '{profile_name}' (PID: {self.process_pid}).")
         try:
-            self.playwright_instance = sync_playwright().start()
+            self.playwright_instance = _get_shared_playwright()
             self.browser = self.playwright_instance.chromium.connect_over_cdp(f"http://127.0.0.1:{self.debug_port}")
             contexts = self.browser.contexts
             self.page = contexts[0].pages[0] if contexts and contexts[0].pages else self.browser.new_page()
@@ -362,7 +370,7 @@ class BrowserManager:
         print(f"✅ Browser started (PID: {self.process_pid}).")
 
         try:
-            self.playwright_instance = sync_playwright().start()
+            self.playwright_instance = _get_shared_playwright()
             self.browser = self.playwright_instance.chromium.connect_over_cdp(
                 f"http://127.0.0.1:{self.debug_port}"
             )
@@ -473,7 +481,7 @@ class BrowserManager:
     ):
         self._launch_browser_clean(profile_name, headless=headless)
 
-        self.playwright = sync_playwright().start()
+        self.playwright = _get_shared_playwright()
         self.browser = self.playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{self.debug_port}")
 
         # Smart country detection
@@ -574,8 +582,9 @@ class BrowserManager:
             self.browser = None
         if self.playwright_instance:
             try:
-                self.playwright_instance.stop()
-                print("Stopped Playwright instance")
+                # We purposely do not stop the shared Playwright instance here
+                # self.playwright_instance.stop()
+                print("Skipped stopping shared Playwright instance")
             except Exception as e:
                 print(f"Error stopping Playwright: {e}")
             self.playwright_instance = None
